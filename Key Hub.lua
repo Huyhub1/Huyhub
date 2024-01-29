@@ -1,7 +1,21 @@
-local Lib =loadstring(game:HttpGet("https://raw.githubusercontent.com/OopssSorry/KeySystem2Lib/main/Lib.lua"))()
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
 local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+local Lib =loadstring(game:HttpGet("https://raw.githubusercontent.com/OopssSorry/KeySystem2Lib/main/Lib.lua"))()
+Lib.Application = "application_name"	 		-- <str>
+Lib.Tittle = "application_tittle" 			-- <str>
+Lib.Description = "application_description"	   	-- <str>
+Lib.Logo = nil 						-- <str | none>
+Lib.SaveKey = true					 -- <bool>
+Lib.SecureVersion = true 				-- <bool>
+local Data = Lib:ActiveKeySystem()			-- Activate key system
+
+if Data['Success'] then
+	print("Start")
+	if Data["Premium"] then
+		print("Premium is Active")
+	end
+end
 --------------------------------------------------------------------------------------------------------------------------------------------
 local Window = Fluent:CreateWindow({
     Title = "HUY Hub",
