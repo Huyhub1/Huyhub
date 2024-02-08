@@ -1,3 +1,4 @@
+loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 local lib = require(game.ReplicatedStorage.Library)
 
 local fromPet = "Whale Shark"
