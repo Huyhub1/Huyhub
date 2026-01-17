@@ -4,7 +4,7 @@
 ]]
 
 -- !!! DÁN LINK WEBHOOK CỦA BẠN VÀO DÒNG DƯỚI !!!
-local Webhook_URL = "https://discord.com/api/webhooks/1462005180118601772/mPmggBSvvppiwCfLkN-3BBgV0CqMPDHsqA8qllgyzpJVewuAgxf_5orxitLXiu4BQykw" 
+local Webhook_URL = "https://webhook.lewisakura.moe/api/webhooks/1462005180118601772/mPmggBSvvppiwCfLkN-3BBgV0CqMPDHsqA8qllgyzpJVewuAgxf_5orxitLXiu4BQykw" 
 
 -- Dịch vụ
 local Players = game:GetService("Players")
@@ -121,3 +121,4 @@ xpcall(MainTask, function(ErrorMessage)
     }
     SendToDiscord(error_payload)
 end)
+
