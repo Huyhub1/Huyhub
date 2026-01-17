@@ -1,4 +1,4 @@
-local Webhook_URL = "https://discord.com/api/webhooks/xxxx/xxxx" 
+local Webhook_URL = "https://discord.com/api/webhooks/1462005180118601772/mPmggBSvvppiwCfLkN-3BBgV0CqMPDHsqA8qllgyzpJVewuAgxf_5orxitLXiu4BQykw" 
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
@@ -92,3 +92,4 @@ else
     Notify("Thất Bại", "Executor không hỗ trợ gửi HTTP Request.")
     warn("❌ Executor của bạn không có hàm request/http_request.")
 end
+
