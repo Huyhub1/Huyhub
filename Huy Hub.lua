@@ -194,6 +194,7 @@ local function StartFarmingLoop()
                 
                 -- [OPTIMIZATION]: Only scan if we don't have a valid target
                 if not CurrentTarget or not CurrentTarget.Parent then
+                    StatusLabel.Text = "Status: Scanning..."
                     CurrentTarget = FindNearestTarget()
                 end
                 
@@ -201,6 +202,7 @@ local function StartFarmingLoop()
                      local targetPos = (CurrentTarget:IsA("BasePart") and CurrentTarget.Position) or (CurrentTarget:IsA("Model") and CurrentTarget.PrimaryPart and CurrentTarget.PrimaryPart.Position)
                     
                     if targetPos then
+                        StatusLabel.Text = "Status: Moving to " .. CurrentTarget.Name
                         local dist = (root.Position - targetPos).Magnitude
                         
                         if dist > 5 then
