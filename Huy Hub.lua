@@ -333,12 +333,14 @@ local function GameLoop()
     end
 end
 
-task.spawn(GameLoop)
-
 local function CreateElement(class, props)
     local inst = Instance.new(class)
     for k, v in pairs(props) do inst[k] = v end
     return inst
+end
+
+if game.CoreGui:FindFirstChild("Gemini_Harbor_Farm_Original") then
+    game.CoreGui.Gemini_Harbor_Farm_Original:Destroy()
 end
 
 local ScreenGui = CreateElement("ScreenGui", {Name = "Gemini_Harbor_Farm_Original", Parent = game.CoreGui, ResetOnSpawn = false})
