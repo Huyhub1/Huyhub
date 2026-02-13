@@ -90,7 +90,6 @@ local function AttemptInteract(target)
     end
 end
 
-local function ServerHop()
 
 local function ServerHop()
     local Http = game:GetService("HttpService")
@@ -348,8 +347,8 @@ local ToggleBtn = CreateElement("TextButton", {
     Parent = ScreenGui,
     Size = UDim2.new(0, 80, 0, 30),
     Position = UDim2.new(0, 20, 0, 20),
-    BackgroundColor3 = Color3.fromRGB(0, 150, 200),
-    Text = "MỞ MENU (RC)",
+    BackgroundColor3 = Color3.fromRGB(180, 50, 50),
+    Text = "ĐÓNG MENU (RC)",
     TextColor3 = Color3.fromRGB(255, 255, 255),
     Font = Enum.Font.SourceSansBold,
     TextSize = 14,
@@ -363,7 +362,7 @@ local Main = CreateElement("Frame", {
     BorderSizePixel = 0,
     Position = UDim2.new(0.02, 0, 0.4, 0),
     Size = UDim2.new(0, 200, 0, 300),
-    Visible = false,
+    Visible = true,
     Active = true,
     Draggable = true
 })
@@ -395,14 +394,6 @@ UIS.InputBegan:Connect(function(input, processed)
     end
 end)
 
-local function GetCharacter()
-    return Player.Character or Player.CharacterAdded:Wait()
-end
-
-local function GetRoot()
-    local char = GetCharacter()
-    return char:WaitForChild("HumanoidRootPart", 5)
-end
 
 local function TweenTo(cframe)
     local root = GetRoot()
