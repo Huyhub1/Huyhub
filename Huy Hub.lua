@@ -135,6 +135,105 @@ local function LogError(msg)
     SendToHost("error.txt", "[ERROR]: " .. tostring(msg))
 end
 
+local _FARMING_LOOP_RUNNING = false
+
+local function FindNearestTarget()
+    local root = GetRoot()
+    if not root then return nil end
+    
+    local nearest = nil
+    local minDist = math.huge
+    
+    -- Optimize: Only scan Workspace, potentially specific folders if known
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj.Name == _TARGET_NAME and obj.Parent then -- Check .Parent to ensure it exists
+            local pos = nil
+            if obj:IsA("BasePart") then pos = obj.Position end
+            if obj:IsA("Model") and obj.PrimaryPart then pos = obj.PrimaryPart.Position end
+            
+            if pos then
+                local dist = (root.Position - pos).Magnitude
+                if dist < minDist then
+                    minDist = dist
+                    nearest = obj
+                end
+            end
+        end
+    end
+    return nearest
+end
+
+local function StartFarmingLoop()
+    if _FARMING_LOOP_RUNNING then return end
+    _FARMING_LOOP_RUNNING = true
+    
+    task.spawn(function()
+        local CurrentTarget = nil
+        
+        while _AUTO_FARM do
+             local success, err = pcall(function()
+                local root = GetRoot()
+                if not root then 
+                    task.wait(1)
+                    return 
+                end
+                
+                -- [OPTIMIZATION]: Only scan if we don't have a valid target
+                if not CurrentTarget or not CurrentTarget.Parent then
+                    CurrentTarget = FindNearestTarget()
+                end
+                
+                if CurrentTarget then
+                     local targetPos = (CurrentTarget:IsA("BasePart") and CurrentTarget.Position) or (CurrentTarget:IsA("Model") and CurrentTarget.PrimaryPart and CurrentTarget.PrimaryPart.Position)
+                    
+                    if targetPos then
+                        local dist = (root.Position - targetPos).Magnitude
+                        
+                        if dist > 5 then
+                            local time = dist / _FARM_SPEED
+                            local info = TweenInfo.new(time, Enum.EasingStyle.Linear)
+                            local tween = TS:Create(root, info, {CFrame = CFrame.new(targetPos)})
+                            tween:Play()
+                            
+                            -- While tweening, update target status
+                            local tweenRunning = true
+                            local checkConnection
+                            checkConnection = game:GetService("RunService").Heartbeat:Connect(function()
+                                if not _AUTO_FARM or not CurrentTarget or not CurrentTarget.Parent then
+                                    tween:Cancel()
+                                    tweenRunning = false
+                                    checkConnection:Disconnect()
+                                end
+                                -- Attempt interact while moving
+                                if CurrentTarget and (root.Position - targetPos).Magnitude < 10 then
+                                     AttemptInteract(CurrentTarget)
+                                end
+                            end)
+                            
+                            tween.Completed:Wait()
+                            if checkConnection then checkConnection:Disconnect() end
+                        end
+                        
+                        -- Final attempt
+                        AttemptInteract(CurrentTarget)
+                    else
+                         CurrentTarget = nil -- Invalid target
+                    end
+                else
+                    task.wait(1) -- [OPTIMIZATION]: Wait longer when no targets found to save CPU
+                end
+            end)
+            
+            if not success then
+                LogError("AutoFarm Error: " .. tostring(err))
+                task.wait(1)
+            end
+            task.wait(0.1)
+        end
+        _FARMING_LOOP_RUNNING = false
+    end)
+end
+
 local function GameLoop()
     while true do
         local success, err = pcall(function()
