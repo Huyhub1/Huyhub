@@ -25,6 +25,21 @@ end)
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
+local function GetCharacter()
+    return Player.Character or Player.CharacterAdded:Wait()
+end
+
+local function GetRoot()
+    local char = GetCharacter()
+    return char:WaitForChild("HumanoidRootPart", 5)
+end
+
+local function CheckMap()
+    for name, cords in pairs(_MAP_CONFIG) do
+        if Workspace:FindFirstChild(name) then
+            return name, cords
+        end
+    end
     return nil, nil
 end
 
