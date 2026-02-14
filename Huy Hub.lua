@@ -81,13 +81,18 @@ local function IsVisible(targetPart)
     local origin = Camera.CFrame.Position
     local direction = (targetPart.Position - origin).Unit * (targetPart.Position - origin).Magnitude
     local raycastParams = RaycastParams.new()
-    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
+    
+    local filter = {Camera}
+    if LocalPlayer.Character then table.insert(filter, LocalPlayer.Character) end
+    
+    raycastParams.FilterDescendantsInstances = filter
     raycastParams.FilterType = Enum.RaycastFilterType.Exclude
     
     local result = Workspace:Raycast(origin, direction, raycastParams)
     if result then
         return result.Instance:IsDescendantOf(targetPart.Parent)
     end
+    -- If nil, probably nothing blocked
     return true
 end
 
@@ -141,7 +146,7 @@ Tabs.Combat:AddKeybind("AimbotKey", {
 })
 
  Tabs.Combat:AddSlider("AimbotFOV", {
-    Title = "Aimbot FOV",
+    Title = "Aimbot FOV (Radius)",
     Default = 100,
     Min = 10,
     Max = 800,
@@ -260,7 +265,10 @@ RunService.RenderStepped:Connect(function()
              -- Smooth Aim
              local currentCFrame = camera.CFrame
              local targetCFrame = CFrame.new(currentCFrame.Position, targetPos)
-             camera.CFrame = currentCFrame:Lerp(targetCFrame, 1 / (_AIMBOT_SMOOTHNESS * 2)) -- Adjusted factor for feel
+             
+             -- [LEGIT] Only affect camera if holding fire AND target is valid
+             -- Uses Slerp/Lerp for natural feel
+             camera.CFrame = currentCFrame:Lerp(targetCFrame, 1 / (_AIMBOT_SMOOTHNESS * 2))
         end
     end
     
@@ -340,6 +348,37 @@ RunService.Heartbeat:Connect(function()
             AddESP(plr)
         end
     end
+end)
+
+-- UI Toggle Button
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "GeminiPvPToggle"
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+ScreenGui.ResetOnSpawn = false
+
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Parent = ScreenGui
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+ToggleBtn.Position = UDim2.new(0, 10, 0.5, -25)
+ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
+ToggleBtn.Text = "MENU"
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleBtn.TextSize = 12
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.BorderSizePixel = 0
+ToggleBtn.BackgroundTransparency = 0.5
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 10)
+UICorner.Parent = ToggleBtn
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    pcall(function()
+        local vim = game:GetService("VirtualInputManager")
+        vim:SendKeyEvent(true, Enum.KeyCode.RightControl, false, game)
+        task.wait()
+        vim:SendKeyEvent(false, Enum.KeyCode.RightControl, false, game)
+    end)
 end)
 
 -- SaveManager Setup
