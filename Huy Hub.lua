@@ -48,14 +48,8 @@ local _ESP_TRACERS = false
 local _ESP_NAME = false
 local _ESP_TEAM_CHECK = true
 
-local FOVCircle = Drawing.new("Circle")
-FOVCircle.Color = Color3.fromRGB(255, 255, 255)
-FOVCircle.Thickness = 1
-FOVCircle.NumSides = 60
-FOVCircle.Radius = _AIMBOT_FOV
-FOVCircle.Visible = false
-FOVCircle.Filled = false
-FOVCircle.Transparency = 1
+-- FOV Circle Removed as per request
+-- local FOVCircle = Drawing.new("Circle") ...
 
 -- Utils
 local function IsKeyDown(key)
@@ -130,7 +124,6 @@ end
 local AimbotToggle = Tabs.Combat:AddToggle("Aimbot", {Title = "Legit Aimbot (Aim on Fire)", Default = false })
 AimbotToggle:OnChanged(function()
     _AIMBOT_ENABLED = Options.Aimbot.Value
-    FOVCircle.Visible = _AIMBOT_ENABLED
 end)
 
 Tabs.Combat:AddKeybind("AimbotKey", {
@@ -153,7 +146,6 @@ Tabs.Combat:AddKeybind("AimbotKey", {
     Rounding = 0,
     Callback = function(Value)
         _AIMBOT_FOV = Value
-        FOVCircle.Radius = Value
     end
 })
 
@@ -251,9 +243,8 @@ end
 
 
 RunService.RenderStepped:Connect(function()
-    -- Aimbot FOV Circle Position
-    FOVCircle.Position = Camera.ViewportSize / 2 + game:GetService("GuiService"):GetGuiInset()
-    FOVCircle.Visible = _AIMBOT_ENABLED and Options.Aimbot.Value
+    -- FOV Circle Removed
+    -- FOVCircle.Position = ...
     
     -- Aimbot Logic (Legit Camera Smooth)
     if _AIMBOT_ENABLED and IsKeyDown(_AIMBOT_KEY) then 
@@ -285,7 +276,7 @@ RunService.RenderStepped:Connect(function()
                           plr.TracerLine.Color = Color3.fromRGB(255, 0, 0)
                       end
                       plr.TracerLine.Visible = true
-                      plr.TracerLine.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y) -- Bottom Center
+                      plr.TracerLine.From = Vector2.new(Camera.ViewportSize.X / 2, 0) -- Top Center
                       plr.TracerLine.To = Vector2.new(Vector.X, Vector.Y)
                  else
                       if plr.TracerLine then plr.TracerLine.Visible = false end
@@ -321,7 +312,7 @@ local function UpdateTracers()
                 local Vector, OnScreen = Camera:WorldToViewportPoint(hrp.Position)
                 if OnScreen then
                     line.Visible = true
-                    line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                    line.From = Vector2.new(Camera.ViewportSize.X / 2, 0) -- Top Center
                     line.To = Vector2.new(Vector.X, Vector.Y)
                 else
                     line.Visible = false
@@ -379,6 +370,42 @@ ToggleBtn.MouseButton1Click:Connect(function()
         task.wait()
         vim:SendKeyEvent(false, Enum.KeyCode.RightControl, false, game)
     end)
+end)
+
+local AimbotBtn = Instance.new("TextButton")
+AimbotBtn.Parent = ScreenGui
+AimbotBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+AimbotBtn.Position = UDim2.new(0, 10, 0.5, 35) -- Below Menu Toggle
+AimbotBtn.Size = UDim2.new(0, 50, 0, 50)
+AimbotBtn.Text = "AIM"
+AimbotBtn.TextColor3 = Color3.fromRGB(255, 0, 0) -- Red when off
+AimbotBtn.TextSize = 12
+AimbotBtn.Font = Enum.Font.GothamBold
+AimbotBtn.BorderSizePixel = 0
+AimbotBtn.BackgroundTransparency = 0.5
+
+local UICorner2 = Instance.new("UICorner")
+UICorner2.CornerRadius = UDim.new(0, 10)
+UICorner2.Parent = AimbotBtn
+
+AimbotBtn.MouseButton1Click:Connect(function()
+    _AIMBOT_ENABLED = not _AIMBOT_ENABLED
+    if Options.Aimbot then Options.Aimbot:SetValue(_AIMBOT_ENABLED) end
+    
+    if _AIMBOT_ENABLED then
+        AimbotBtn.TextColor3 = Color3.fromRGB(0, 255, 0) -- Green when on
+    else
+        AimbotBtn.TextColor3 = Color3.fromRGB(255, 0, 0)
+    end
+end)
+
+-- Sync Aimbot Button Color with State
+RunService.RenderStepped:Connect(function()
+    if _AIMBOT_ENABLED then
+        AimbotBtn.TextColor3 = Color3.fromRGB(0, 255, 0)
+    else
+        AimbotBtn.TextColor3 = Color3.fromRGB(255, 0, 0)
+    end
 end)
 
 -- SaveManager Setup
