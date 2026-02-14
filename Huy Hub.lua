@@ -1,262 +1,468 @@
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+
+local Window = Fluent:CreateWindow({
+    Title = "Harbor Havoc Farm",
+    SubTitle = "by Gemini",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(580, 460),
+    Acrylic = true,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.RightControl
+})
+
+local Tabs = {
+    Main = Window:AddTab({ Title = "Main", Icon = "home" }),
+    Combat = Window:AddTab({ Title = "Combat", Icon = "swords" }),
+    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
+}
+
+local Options = Fluent.Options
+
+-- Logic Variables
+local Players = game:GetService("Players")
+local Player = Players.LocalPlayer -- May be nil initially, handled in loops
+local Workspace = game:GetService("Workspace")
+
+local TS = game:GetService("TweenService")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Camera = Workspace.CurrentCamera
+local VirtualUser = game:GetService("VirtualUser")
+local HttpService = game:GetService("HttpService")
+
 local _DELAY = 0.1
 local _FARM_SPEED = 50
 local _TARGET_NAME = "Crate"
 local _AUTO_FARM = false
+local _FARMING_LOOP_RUNNING = false
+
+-- Hitbox & ESP Variables
+local _HITBOX_ENABLED = false
+local _HITBOX_SIZE = 10
+local _ESP_ENABLED = false
+local _ESP_TEAMS_CHECK = true
+
+-- Anti-Ban Utility
+local function RandomWait()
+    task.wait(math.random(100, 300) / 1000) -- 0.1s to 0.3s
+end
 
 local _MAP_CONFIG = {
     ["INSERT_MAP_NAME_HERE"] = CFrame.new(-21.732532501220703, -0.21339955925941467, -1074.5548095703125),
     ["Map_Default"] = CFrame.new(0, 50, 0)
 }
 
-local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local TS = game:GetService("TweenService")
-local UIS = game:GetService("UserInputService")
-local VirtualUser = game:GetService("VirtualUser")
-local HttpService = game:GetService("HttpService")
+-- UI Elements
+local ToggleAutoFarm = Tabs.Main:AddToggle("AutoFarm", {Title = "Auto Farm", Default = false })
+local InputTarget = Tabs.Main:AddInput("TargetName", {
+    Title = "Target Name",
+    Default = "Crate",
+    Placeholder = "Enter item name...",
+    Numeric = false,
+    Finished = true,
+    Callback = function(Value)
+        _TARGET_NAME = Value
+    end
+})
 
--- [ANTI-AFK]
-Player.Idled:Connect(function()
-    VirtualUser:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
-    task.wait(1)
-    VirtualUser:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
-end)
+local StatusParagraph = Tabs.Main:AddParagraph({
+    Title = "Status",
+    Content = "Idle"
+})
 
-local Player = Players.LocalPlayer
-local PlayerGui = Player:WaitForChild("PlayerGui")
 
-local function GetCharacter()
-    return Player.Character or Player.CharacterAdded:Wait()
-end
 
-local function GetRoot()
-    local char = GetCharacter()
-    return char:WaitForChild("HumanoidRootPart", 5)
-end
-
-local function CheckMap()
-    for name, cords in pairs(_MAP_CONFIG) do
-        if Workspace:FindFirstChild(name) then
-            return name, cords
+Tabs.Main:AddButton({
+    Title = "Teleport to Map",
+    Description = "Teleport to known map center",
+    Callback = function()
+        local function CheckMap()
+            for name, cords in pairs(_MAP_CONFIG) do
+                if Workspace:FindFirstChild(name) then return name, cords end
+            end
+            return nil, nil
+        end
+        local mapName, mapCFrame = CheckMap()
+        if mapName then
+            local root = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                TS:Create(root, TweenInfo.new((root.Position - mapCFrame.Position).Magnitude / _FARM_SPEED, Enum.EasingStyle.Linear), {CFrame = mapCFrame}):Play()
+            end
+        else
+            Fluent:Notify({Title = "Error", Content = "Map not found!", Duration = 3})
         end
     end
-    return nil, nil
+})
+
+Tabs.Main:AddButton({
+    Title = "Server Hop",
+    Description = "Find a smaller server",
+    Callback = function()
+        local TPS = game:GetService("TeleportService")
+        local Api = "https://games.roblox.com/v1/games/"
+        local _place, _id = game.PlaceId, game.JobId
+        local _servers = Api .. _place .. "/servers/Public?sortOrder=Asc&limit=100"
+        local function ListServers(cursor)
+            local Raw = game:HttpGet(_servers .. ((cursor and "&cursor=" .. cursor) or ""))
+            return HttpService:JSONDecode(Raw)
+        end
+        local Server, Next = nil, nil
+        local success, err = pcall(function()
+            repeat
+                local Servers = ListServers(Next)
+                for _, v in pairs(Servers.data) do
+                    if v.playing < v.maxPlayers and v.id ~= _id then
+                        Server = v
+                        break
+                    end
+                end
+                Next = Servers.nextPageCursor
+            until Server or not Next
+        end)
+        if success and Server then
+            TPS:TeleportToPlaceInstance(_place, Server.id, game.Players.LocalPlayer)
+        end
+    end
+})
+
+ToggleAutoFarm:OnChanged(function()
+    _AUTO_FARM = Options.AutoFarm.Value
+    if _AUTO_FARM then
+        StartFarmingLoop()
+    end
+end)
+
+-- Combat UI
+local ToggleHitbox = Tabs.Combat:AddToggle("Hitbox", {Title = "Hitbox Expander (Auto Hit)", Default = false })
+ToggleHitbox:OnChanged(function()
+    _HITBOX_ENABLED = Options.Hitbox.Value
+end)
+
+Tabs.Combat:AddSlider("HitboxSize", {
+    Title = "Hitbox Size",
+    Description = "Expand enemy hitbox size",
+    Default = 10,
+    Min = 2,
+    Max = 20,
+    Rounding = 1,
+    Callback = function(Value)
+        _HITBOX_SIZE = Value
+    end
+})
+
+local ToggleESP = Tabs.Combat:AddToggle("ESP", {Title = "ESP (Wallhack)", Default = false })
+ToggleESP:OnChanged(function()
+    _ESP_ENABLED = Options.ESP.Value
+end)
+
+Tabs.Combat:AddToggle("ESPTeamCheck", {Title = "ESP Team Check", Default = true }):OnChanged(function(val)
+    _ESP_TEAMS_CHECK = val
+end)
+
+
+-- Logic Functions
+-- [ANTI-AFK]
+task.spawn(function()
+    Player.Idled:Connect(function()
+        VirtualUser:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+        task.wait(1)
+        VirtualUser:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+    end)
+end)
+
+
+
+-- Combat Logic
+local function IsTeammate(plr)
+    if Player.Team and plr.Team then
+        return Player.Team == plr.Team
+    end
+    return false
 end
 
--- [APPLIED KNOWLEDGE]: Advanced Interaction Functions
+-- Shared Function to Create ESP
+local function CreateESP(plr)
+    if not plr.Character then return end
+    
+    -- Highlight
+    if not plr.Character:FindFirstChild("GeminiESP") then
+        local hl = Instance.new("Highlight")
+        hl.Name = "GeminiESP"
+        hl.Adornee = plr.Character
+        hl.FillColor = Color3.fromRGB(255, 0, 0)
+        hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+        hl.FillTransparency = 0.5
+        hl.OutlineTransparency = 0
+        hl.Parent = plr.Character
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop -- [FIX] See through walls/vehicles
+    end
+    
+    -- Text Info
+    if not plr.Character:FindFirstChild("GeminiInfo") and plr.Character:FindFirstChild("Head") then
+        local bg = Instance.new("BillboardGui")
+        bg.Name = "GeminiInfo"
+        bg.Adornee = plr.Character.Head
+        bg.Size = UDim2.new(0, 100, 0, 50)
+        bg.StudsOffset = Vector3.new(0, 2, 0)
+        bg.AlwaysOnTop = true
+        
+        local text = Instance.new("TextLabel")
+        text.Parent = bg
+        text.BackgroundTransparency = 1
+        text.Size = UDim2.new(1, 0, 1, 0)
+        text.TextStrokeTransparency = 0
+        text.TextColor3 = Color3.fromRGB(255, 255, 255)
+        text.TextSize = 12
+        text.Font = Enum.Font.SourceSansBold
+        text.Text = plr.Name
+        bg.Parent = plr.Character
+        
+        -- Health Loop
+        task.spawn(function()
+            while plr.Character and plr.Character:FindFirstChild("Humanoid") and plr.Character:FindFirstChild("GeminiInfo") do
+                local hum = plr.Character.Humanoid
+                text.Text = plr.Name .. "\n[" .. math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth) .. "]"
+                if IsTeammate(plr) then
+                     text.TextColor3 = Color3.fromRGB(0, 255, 0) -- Green for Friend
+                     hl.FillColor = Color3.fromRGB(0, 255, 0)
+                else
+                     text.TextColor3 = Color3.fromHSV((hum.Health/hum.MaxHealth)*0.3, 1, 1) -- Red/Orange for Enemy
+                     hl.FillColor = Color3.fromRGB(255, 0, 0)
+                end
+                task.wait(0.5)
+            end
+        end)
+    end
+end
+
+-- UI Toggle Button
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "GeminiToggle"
+ScreenGui.Parent = Player:WaitForChild("PlayerGui")
+ScreenGui.ResetOnSpawn = false
+
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Parent = ScreenGui
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+ToggleBtn.Position = UDim2.new(0, 10, 0.5, -25)
+ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
+ToggleBtn.Text = "MENU"
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleBtn.TextSize = 12
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.BorderSizePixel = 0
+ToggleBtn.BackgroundTransparency = 0.5
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 10)
+UICorner.Parent = ToggleBtn
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    local lib = game:GetService("CoreGui"):FindFirstChild("ScreenGui")
+    -- Fluent uses internal state/MinimizeKey usually.
+    -- Assuming we can just find the main Window frame if accessible, but Fluent is protected.
+    -- Best way: Simulate Key Press or check if Library exposes Toggle.
+    -- Inspecting Fluent source: Library:Toggle().
+    pcall(function()
+        local vim = game:GetService("VirtualInputManager")
+        vim:SendKeyEvent(true, Enum.KeyCode.RightControl, false, game)
+        task.wait()
+        vim:SendKeyEvent(false, Enum.KeyCode.RightControl, false, game)
+    end)
+end)
+
+local function ClearESP(plr)
+    if plr.Character then
+        if plr.Character:FindFirstChild("GeminiESP") then plr.Character.GeminiESP:Destroy() end
+        if plr.Character:FindFirstChild("GeminiInfo") then plr.Character.GeminiInfo:Destroy() end
+    end
+end
+
+RunService.Heartbeat:Connect(function()
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= Player and plr.Character and plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health > 0 then
+            
+            local isTeam = IsTeammate(plr)
+            
+            -- HITBOX EXPANDER
+            if _HITBOX_ENABLED and (not isTeam or not _ESP_TEAMS_CHECK) then
+                 local root = plr.Character:FindFirstChild("HumanoidRootPart")
+                 if root then
+                     root.Size = Vector3.new(_HITBOX_SIZE, _HITBOX_SIZE, _HITBOX_SIZE)
+                     root.Transparency = 0.7
+                     root.CanCollide = false
+                 end
+            elseif plr.Character:FindFirstChild("HumanoidRootPart") and plr.Character.HumanoidRootPart.Size.X == _HITBOX_SIZE then
+                 -- Revert size if disabled
+                 plr.Character.HumanoidRootPart.Size = Vector3.new(2, 2, 1)
+                 plr.Character.HumanoidRootPart.Transparency = 1
+            end
+            
+            -- ESP
+            if _ESP_ENABLED and (not isTeam or not _ESP_TEAMS_CHECK) then
+                CreateESP(plr)
+            else
+                ClearESP(plr)
+            end
+        end
+    end
+end)
+
+local function GetCharacter() return Player.Character or Player.CharacterAdded:Wait() end
+local function GetRoot() local char = GetCharacter() return char:WaitForChild("HumanoidRootPart", 5) end
+
 local function FireTouch(part)
     local root = GetRoot()
     if root and part:IsA("BasePart") then
-        firetouchinterest(root, part, 0) -- Touch
+        firetouchinterest(root, part, 0)
         task.wait()
-        firetouchinterest(root, part, 1) -- Release
+        firetouchinterest(root, part, 1)
     end
 end
 
 local function FirePrompt(instance)
     for _, v in pairs(instance:GetDescendants()) do
-        if v:IsA("ProximityPrompt") then
-            fireproximityprompt(v)
-            return true
-        end
+        if v:IsA("ProximityPrompt") then fireproximityprompt(v) return true end
     end
     return false
 end
 
 local function FireClick(instance)
     for _, v in pairs(instance:GetDescendants()) do
-        if v:IsA("ClickDetector") then
-            fireclickdetector(v)
-            return true
-        end
+        if v:IsA("ClickDetector") then fireclickdetector(v) return true end
     end
     return false
 end
 
 local function AttemptInteract(target)
     if not target then return end
-    
-    -- 1. Try ProximityPrompt (E key)
     if FirePrompt(target) then return end
-    
-    -- 2. Try ClickDetector (Mouse Click)
     if FireClick(target) then return end
-    
-    -- 3. Try Touch (Physical Touch)
-    if target:IsA("BasePart") then
-        FireTouch(target)
-    elseif target:IsA("Model") and target.PrimaryPart then
-        FireTouch(target.PrimaryPart)
-    end
+    if target:IsA("BasePart") then FireTouch(target)
+    elseif target:IsA("Model") and target.PrimaryPart then FireTouch(target.PrimaryPart) end
 end
-
-
-local function ServerHop()
-    local Http = game:GetService("HttpService")
-    local TPS = game:GetService("TeleportService")
-    local Api = "https://games.roblox.com/v1/games/"
-    local _place, _id = game.PlaceId, game.JobId
-    local _servers = Api .. _place .. "/servers/Public?sortOrder=Asc&limit=100"
-    
-    local function ListServers(cursor)
-        local Raw = game:HttpGet(_servers .. ((cursor and "&cursor=" .. cursor) or ""))
-        return Http:JSONDecode(Raw)
-    end
-    
-    local Server, Next = nil, nil
-    local success, err = pcall(function()
-        repeat
-            local Servers = ListServers(Next)
-            for _, v in pairs(Servers.data) do
-                if v.playing < v.maxPlayers and v.id ~= _id then
-                    Server = v
-                    break
-                end
-            end
-            Next = Servers.nextPageCursor
-        until Server or not Next
-    end)
-    
-    if success and Server then
-        TPS:TeleportToPlaceInstance(_place, Server.id, game.Players.LocalPlayer)
-    else
-        return nil
-    end
-end
-
-local function SendToHost(filename, data)
-    local url = "http://localhost:3000/save"
-    local timestamp = os.date("%H:%M:%S")
-    local contentWithTime = "[" .. timestamp .. "] " .. data
-    
-    local body = HttpService:JSONEncode({
-        filename = filename,
-        content = contentWithTime,
-        mode = "append"
-    })
-    
-    local headers = {["Content-Type"] = "application/json"}
-    local req = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
-    
-    if req then
-        pcall(function()
-            req({Url = url, Method = "POST", Headers = headers, Body = body})
-        end)
-    end
-end
-
-local function LogError(msg)
-    SendToHost("error.txt", "[ERROR]: " .. tostring(msg))
-end
-
-local _FARMING_LOOP_RUNNING = false
 
 local function FindNearestTarget()
     local root = GetRoot()
     if not root then return nil end
-    
     local nearest = nil
     local minDist = math.huge
-    
-    -- Optimize: Only scan Workspace, potentially specific folders if known
+    local count = 0
     for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj.Name == _TARGET_NAME and obj.Parent then -- Check .Parent to ensure it exists
+        count = count + 1
+        if count % 2000 == 0 then task.wait() end
+        if obj.Name:find(_TARGET_NAME) and obj.Parent then
             local pos = nil
             if obj:IsA("BasePart") then pos = obj.Position end
             if obj:IsA("Model") and obj.PrimaryPart then pos = obj.PrimaryPart.Position end
-            
             if pos then
                 local dist = (root.Position - pos).Magnitude
-                if dist < minDist then
-                    minDist = dist
-                    nearest = obj
-                end
+                if dist < minDist then minDist = dist nearest = obj end
             end
         end
     end
     return nearest
 end
 
-local function StartFarmingLoop()
+-- Anti-Ban Utilities
+local function RandomWait()
+    -- Random delay between 0.5s and 1.5s
+    task.wait(math.random(500, 1500) / 1000)
+end
+
+
+
+
+-- [LOGIC] Farming Loop with Anti-Ban
+function StartFarmingLoop()
     if _FARMING_LOOP_RUNNING then return end
     _FARMING_LOOP_RUNNING = true
-    
     task.spawn(function()
+        if not Player then Player = Players.LocalPlayer end
         local CurrentTarget = nil
+        local FarmStartTime = os.time()
         
         while _AUTO_FARM do
              local success, err = pcall(function()
                 local root = GetRoot()
-                if not root then 
-                    task.wait(1)
-                    return 
+                if not root then task.wait(1) return end
+                
+                -- [ANTI-BAN] Micro-Break every ~5 minutes
+                if os.time() - FarmStartTime > 300 then
+                    StatusParagraph:SetDesc("Status: Anti-Ban Break (5s)...")
+                    task.wait(5)
+                    FarmStartTime = os.time()
                 end
                 
-                -- [OPTIMIZATION]: Only scan if we don't have a valid target
-                if not CurrentTarget or not CurrentTarget.Parent then
-                    StatusLabel.Text = "Status: Scanning..."
-                    CurrentTarget = FindNearestTarget()
-                end
-                
-                if CurrentTarget then
-                     local targetPos = (CurrentTarget:IsA("BasePart") and CurrentTarget.Position) or (CurrentTarget:IsA("Model") and CurrentTarget.PrimaryPart and CurrentTarget.PrimaryPart.Position)
-                    
-                    if targetPos then
-                        StatusLabel.Text = "Status: Moving to " .. CurrentTarget.Name
-                        local dist = (root.Position - targetPos).Magnitude
-                        
-                        if dist > 5 then
-                            local time = dist / _FARM_SPEED
-                            local info = TweenInfo.new(time, Enum.EasingStyle.Linear)
-                            local tween = TS:Create(root, info, {CFrame = CFrame.new(targetPos)})
-                            tween:Play()
-                            
-                            -- While tweening, update target status
-                            local tweenRunning = true
-                            local checkConnection
-                            checkConnection = game:GetService("RunService").Heartbeat:Connect(function()
-                                if not _AUTO_FARM or not CurrentTarget or not CurrentTarget.Parent then
-                                    tween:Cancel()
-                                    tweenRunning = false
-                                    checkConnection:Disconnect()
-                                end
-                                -- Attempt interact while moving
-                                if CurrentTarget and (root.Position - targetPos).Magnitude < 10 then
-                                     AttemptInteract(CurrentTarget)
-                                end
-                            end)
-                            
-                            tween.Completed:Wait()
-                            if checkConnection then checkConnection:Disconnect() end
+                -- [LOGIC] Check if in Lobby/Menu
+                local PlayerGui = Player:FindFirstChild("PlayerGui")
+                local waitingForGame = false
+                if PlayerGui then
+                    local gui = PlayerGui:FindFirstChild("gui")
+                    if gui then
+                        if (gui:FindFirstChild("startMenu") and gui.startMenu.Visible) or
+                           (gui:FindFirstChild("teamChoice") and gui.teamChoice.Visible) or
+                           (gui:FindFirstChild("spawnChoice") and gui.spawnChoice.Visible) then
+                            waitingForGame = true
                         end
-                        
-                        -- Final attempt
-                        AttemptInteract(CurrentTarget)
-                    else
-                         CurrentTarget = nil -- Invalid target
                     end
+                end
+                
+                if waitingForGame then
+                    StatusParagraph:SetDesc("Status: Auto Joining...")
+                    task.wait(1)
                 else
-                    task.wait(1) -- [OPTIMIZATION]: Wait longer when no targets found to save CPU
+                    if not CurrentTarget or not CurrentTarget.Parent then
+                        StatusParagraph:SetDesc("Status: Scanning for " .. _TARGET_NAME .. "...")
+                        CurrentTarget = FindNearestTarget()
+                    end
+                    
+                    if CurrentTarget then
+                        local targetPos = (CurrentTarget:IsA("BasePart") and CurrentTarget.Position) or (CurrentTarget:IsA("Model") and CurrentTarget.PrimaryPart and CurrentTarget.PrimaryPart.Position)
+                        if targetPos then
+                            StatusParagraph:SetDesc("Status: Moving to " .. CurrentTarget.Name)
+                            
+
+                            
+                            local dist = (root.Position - targetPos).Magnitude
+                            if dist > 5 then
+                                local time = dist / _FARM_SPEED
+                                local info = TweenInfo.new(time, Enum.EasingStyle.Linear)
+                                local tween = TS:Create(root, info, {CFrame = CFrame.new(targetPos)})
+                                tween:Play()
+                                tween.Completed:Wait()
+                            end
+
+                            -- [ANTI-BAN] Random Delay if already close
+                            RandomWait()
+                            AttemptInteract(CurrentTarget)
+                        else
+                            CurrentTarget = nil
+                        end
+                    else
+                        task.wait(1)
+                    end
                 end
             end)
-            
-            if not success then
-                LogError("AutoFarm Error: " .. tostring(err))
-                task.wait(1)
-            end
+            if not success then task.wait(1) end
             task.wait(0.1)
         end
         _FARMING_LOOP_RUNNING = false
+        StatusParagraph:SetDesc("Status: Idle")
     end)
 end
 
+
 local function GameLoop()
     while true do
-        local success, err = pcall(function()
+        pcall(function()
             task.wait(2)
+            local PlayerGui = Player:FindFirstChild("PlayerGui")
+            if not PlayerGui then return end
             
             local gui = PlayerGui:FindFirstChild("gui")
-            
             if gui then
                 local startMenu = gui:FindFirstChild("startMenu")
                 if startMenu and startMenu.Visible then
@@ -274,7 +480,6 @@ local function GameLoop()
                     end
                 end
             end
-            
             if gui then
                  local teamChoice = gui:FindFirstChild("teamChoice")
                  if teamChoice and teamChoice.Visible then
@@ -291,7 +496,6 @@ local function GameLoop()
                      end
                  end
             end
-    
             if gui then
                 local spawnChoice = gui:FindFirstChild("spawnChoice")
                 if spawnChoice and spawnChoice.Visible then
@@ -303,7 +507,6 @@ local function GameLoop()
                     end
                 end
             end
-    
             if gui then
                 local hud = gui:FindFirstChild("hud")
                 if hud then
@@ -327,172 +530,20 @@ local function GameLoop()
                 end
             end
         end)
-        
-        if not success then
-            LogError("GameLoop Error: " .. tostring(err))
-            task.wait(5)
-        end
     end
 end
 
-local function CreateElement(class, props)
-    local inst = Instance.new(class)
-    for k, v in pairs(props) do inst[k] = v end
-    return inst
-end
+task.spawn(GameLoop)
 
-if game.CoreGui:FindFirstChild("Gemini_Harbor_Farm_Original") then
-    game.CoreGui.Gemini_Harbor_Farm_Original:Destroy()
-end
+Window:SelectTab(1)
 
-local ScreenGui = CreateElement("ScreenGui", {Name = "Gemini_Harbor_Farm_Original", Parent = game.CoreGui, ResetOnSpawn = false})
+SaveManager:SetLibrary(Fluent)
+InterfaceManager:SetLibrary(Fluent)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({})
+InterfaceManager:SetFolder("FluentScriptHub")
+SaveManager:SetFolder("FluentScriptHub/specific-game")
 
-local ToggleBtn = CreateElement("TextButton", {
-    Parent = ScreenGui,
-    Size = UDim2.new(0, 80, 0, 30),
-    Position = UDim2.new(0, 20, 0, 20),
-    BackgroundColor3 = Color3.fromRGB(180, 50, 50),
-    Text = "ĐÓNG MENU (RC)",
-    TextColor3 = Color3.fromRGB(255, 255, 255),
-    Font = Enum.Font.SourceSansBold,
-    TextSize = 14,
-    ZIndex = 10
-})
-CreateElement("UICorner", {CornerRadius = UDim.new(0, 6), Parent = ToggleBtn})
-
-local Main = CreateElement("Frame", {
-    Parent = ScreenGui,
-    BackgroundColor3 = Color3.fromRGB(25, 25, 25),
-    BorderSizePixel = 0,
-    Position = UDim2.new(0.02, 0, 0.4, 0),
-    Size = UDim2.new(0, 200, 0, 300),
-    Visible = true,
-    Active = true,
-    Draggable = true
-})
-CreateElement("UICorner", {CornerRadius = UDim.new(0, 8), Parent = Main})
-
-local Title = CreateElement("TextLabel", {
-    Parent = Main,
-    Size = UDim2.new(1, 0, 0, 35),
-    BackgroundColor3 = Color3.fromRGB(45, 45, 45),
-    Text = "HARBOR AUTO FARM (VN)",
-    TextColor3 = Color3.fromRGB(255, 255, 255),
-    TextSize = 12,
-    Font = Enum.Font.SourceSansBold
-})
-CreateElement("UICorner", {CornerRadius = UDim.new(0, 8), Parent = Title})
-
-local function ToggleMenu()
-    Main.Visible = not Main.Visible
-    ToggleBtn.Text = Main.Visible and "ĐÓNG MENU (RC)" or "MỞ MENU (RC)"
-    ToggleBtn.BackgroundColor3 = Main.Visible and Color3.fromRGB(180, 50, 50) or Color3.fromRGB(0, 150, 200)
-    task.wait(_DELAY)
-end
-
-ToggleBtn.MouseButton1Click:Connect(ToggleMenu)
-
-UIS.InputBegan:Connect(function(input, processed)
-    if not processed and input.KeyCode == Enum.KeyCode.RightControl then
-        ToggleMenu()
-    end
-end)
-
-
-local function TweenTo(cframe)
-    local root = GetRoot()
-    if not root then return end
-    
-    local dist = (root.Position - cframe.Position).Magnitude
-    local time = dist / _FARM_SPEED
-    
-    local info = TweenInfo.new(time, Enum.EasingStyle.Linear)
-    local tween = TS:Create(root, info, {CFrame = cframe})
-    tween:Play()
-    tween.Completed:Wait()
-end
-
-local function AddFuncButton(text, color, pos, callback)
-    local btn = CreateElement("TextButton", {
-        Parent = Main,
-        Text = text,
-        Size = UDim2.new(0.9, 0, 0, 40),
-        Position = pos,
-        BackgroundColor3 = color,
-        TextColor3 = Color3.fromRGB(255, 255, 255),
-        Font = Enum.Font.SourceSansBold,
-        TextSize = 13
-    })
-    CreateElement("UICorner", {CornerRadius = UDim.new(0, 6), Parent = btn})
-
-    btn.MouseButton1Click:Connect(function()
-        TS:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(255, 255, 255), TextColor3 = Color3.fromRGB(0, 0, 0)}):Play()
-        task.wait(0.1)
-        TS:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = color, TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
-        
-        task.wait(_DELAY)
-        callback(btn)
-    end)
-    return btn
-end
-
-local InputBox = CreateElement("TextBox", {
-    Parent = Main,
-    Size = UDim2.new(0.9, 0, 0, 30),
-    Position = UDim2.new(0.05, 0, 0.32, 0),
-    BackgroundColor3 = Color3.fromRGB(60, 60, 60),
-    Text = _TARGET_NAME,
-    TextColor3 = Color3.fromRGB(255, 255, 255),
-    PlaceholderText = "Nhập tên vật phẩm...",
-    TextSize = 12
-})
-CreateElement("UICorner", {CornerRadius = UDim.new(0, 6), Parent = InputBox})
-InputBox.FocusLost:Connect(function()
-    _TARGET_NAME = InputBox.Text
-end)
-
-local FarmButton
-FarmButton = AddFuncButton("🚜 Bắt Đầu Farm", Color3.fromRGB(0, 180, 100), UDim2.new(0.05, 0, 0.45, 0), function(btn)
-    _AUTO_FARM = not _AUTO_FARM
-    
-    if _AUTO_FARM then
-        btn.Text = "🛑 Dừng Farm"
-        btn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
-        StartFarmingLoop()
-    else
-        btn.Text = "🚜 Bắt Đầu Farm"
-        btn.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
-    end
-end)
--- Add a loop to update button state externally (in case GameLoop toggles it)
-task.spawn(function()
-    while true do
-        task.wait(0.5)
-        if _AUTO_FARM then
-            FarmButton.Text = "� Dừng Farm"
-            FarmButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
-        else
-            FarmButton.Text = "🚜 Bắt Đầu Farm"
-            FarmButton.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
-        end
-    end
-end)
-
-AddFuncButton("⚡ Tăng Tốc Độ", Color3.fromRGB(0, 100, 200), UDim2.new(0.05, 0, 0.65, 0), function()
-    local char = GetCharacter()
-    if char and char:FindFirstChild("Humanoid") then
-        char.Humanoid.WalkSpeed = 50
-    end
-end)
-
-AddFuncButton("🏝️ TP Theo Map", Color3.fromRGB(0, 150, 150), UDim2.new(0.05, 0, 0.75, 0), function()
-    local mapName, mapCFrame = CheckMap()
-    if mapName then
-        TweenTo(mapCFrame)
-    else
-    end
-end)
-
-AddFuncButton("🔀 Server Hop (Ít người)", Color3.fromRGB(150, 0, 150), UDim2.new(0.05, 0, 0.85, 0), function()
-    ServerHop()
-end)
+SaveManager:BuildConfigSection(Tabs.Settings)
+InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+Fluent:Notify({Title = "Harbor Havoc Farm", Content = "Script Loaded Successfully!", Duration = 5})
