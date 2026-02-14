@@ -99,7 +99,7 @@ end
 local function GetClosestPlayer()
     local closest = nil
     local shortestDistance = math.huge
-    local mousePos = UserInputService:GetMouseLocation()
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
     
     for _, plr in pairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health > 0 then
@@ -114,7 +114,7 @@ local function GetClosestPlayer()
                 
                 local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
                 if onScreen then
-                    local dist = (Vector2.new(pos.X, pos.Y) - mousePos).Magnitude
+                    local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
                     if dist < shortestDistance and dist <= _AIMBOT_FOV then
                         shortestDistance = dist
                         closest = part
@@ -252,7 +252,7 @@ end
 
 RunService.RenderStepped:Connect(function()
     -- Aimbot FOV Circle Position
-    FOVCircle.Position = UserInputService:GetMouseLocation()
+    FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
     FOVCircle.Visible = _AIMBOT_ENABLED and Options.Aimbot.Value
     
     -- Aimbot Logic (Legit Camera Smooth)
